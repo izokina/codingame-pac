@@ -26,6 +26,7 @@ int main()
         cin >> myScore >> opponentScore; cin.ignore();
         int visiblePacCount; // all your pacs and enemy pacs in sight
         cin >> visiblePacCount; cin.ignore();
+		vector<pair<int, pair<int, int>>> guys;
         for (int i = 0; i < visiblePacCount; i++) {
             int pacId; // pac number (unique within a team)
             bool mine; // true if this pac is yours
@@ -35,6 +36,9 @@ int main()
             int speedTurnsLeft; // unused in wood leagues
             int abilityCooldown; // unused in wood leagues
             cin >> pacId >> mine >> x >> y >> typeId >> speedTurnsLeft >> abilityCooldown; cin.ignore();
+			if (mine) {
+				guys.push_back({ pacId, { x, y }});
+			}
         }
         int visiblePelletCount; // all pellets in sight
         cin >> visiblePelletCount; cin.ignore();
@@ -43,11 +47,17 @@ int main()
             int y;
             int value; // amount of points this pellet is worth
             cin >> x >> y >> value; cin.ignore();
+			if (value == 10 && guys.size()) {
+				cout << "MOVE " << guys.back().first << " " << x << " " << y << endl;
+				guys.pop_back();
+			}
         }
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
 
-        cout << "MOVE 0 15 10" << endl; // MOVE <pacId> <x> <y>
+		for (size_t i = 0; i < guys.size(); i++) {
+			// cout << "MOVE 0 15 10" << endl; // MOVE <pacId> <x> <y>
+		}
     }
 }
