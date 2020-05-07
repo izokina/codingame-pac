@@ -23,13 +23,16 @@ struct Point {
 	}
 
 	Point operator -(const Point& p) const {
-		return { (x - p.x + SIZE.x) % SIZE.x, (y - p.y + SIZE.x) % SIZE.y };
+		return { (x - p.x + SIZE.x) % SIZE.x, (y - p.y + SIZE.y) % SIZE.y };
 	}
 
 	int dst(const Point& p) const {
-		return abs(x - p.x) + abs(y - p.y);
+		Point d = *this - p;
+		return std::min(d.x, SIZE.x - d.x) + std::min(d.y, SIZE.y - d.y);
 	}
 };
+
+Point Point::SIZE;
 
 struct GuyType {
 	GuyType(const std::string& s) {
@@ -100,16 +103,24 @@ void turn(std::stringstream& s, int id, GuyType t) {
 	s << "SWITCH " << id << " " << t.str();
 }
 
+void speed(std::stringstream& s, int id) {
+	s << "SPEED " << id;
+}
+
 int main()
 {
     int width; // size of the grid
     int height; // top left corner is (x=0, y=0)
 	std::cin >> width >> height; std::cin.ignore();
+	Point::SIZE = { width, height };
     for (int i = 0; i < height; i++) {
 		std::string row;
 		std::getline(std::cin, row); // one line of the grid: space " " is floor, pound "#" is wall
     }
 
+	std::vector<Point> dst(5, { 15, 10 });
+	for (size_t i = 1; i < dst.size(); i++)
+		dst[i] = dst[i] + dst[i - 1];
     // game loop
     while (1) {
         int myScore;
@@ -145,6 +156,11 @@ int main()
 
 		std::stringstream ans;
 		bool first = true;
+		std::sort(guys.begin(), guys.end(), [&](auto& a, auto& b) {
+			if (a.pos.y == b.pos.y)
+				return a.pos.x < b.pos.x;
+			return a.pos.y < b.pos.y;
+		});
 		for (auto& g : guys) {
 			if (!first) {
 				ans << "|";
@@ -156,10 +172,22 @@ int main()
 						move(ans, g.id, b.pos);
 						return;
 					}
+				}
+				for (auto& b : bitches) {
 					if (g.pos.dst(b.pos) == 1 && g.cooldown == 0) {
 						turn(ans, g.id, b.type.up());
 						return;
 					}
+				}
+				bool far = true;
+				for (auto& b : bitches) {
+					if (g.pos.dst(b.pos) <= 10) {
+						far = false;
+					}
+				}
+				if (far && g.cooldown == 0) {
+					speed(ans, g.id);
+					return;
 				}
 				for (auto& p : poops) {
 					if (p.size == 10) {
@@ -175,7 +203,10 @@ int main()
 					poops.pop_back();
 					return;
 				}
-				move(ans, g.id, { 15, 10 });
+				if (g.pos.dst(dst[g.id]) <= 2) {
+					dst[g.id] = dst[g.id] + Point { 3, 11 };
+				}
+				move(ans, g.id, dst[g.id]);
 			};
 			strategy();
 		}
