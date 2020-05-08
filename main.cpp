@@ -298,6 +298,7 @@ struct Game {
 		};
 		std::sort(guys.begin(), guys.end(), cmp);
 		for (auto& g : guys) {
+			std::sort(poops.begin(), poops.end(), cmp);
 			simplePlay(g, moves[g.id]);
 		}
 
