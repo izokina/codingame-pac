@@ -8,10 +8,13 @@
 #include <set>
 #include <unordered_map>
 #include <unordered_set>
+#include <random>
 
 /**
  * Grab the pellets as fast as you can!
  **/
+
+std::mt19937 RND(324);
 
 struct Point {
 	static Point SIZE;
@@ -78,10 +81,10 @@ struct Point {
 
 Point Point::SIZE;
 const Point Point::DIRS[4] {
-	{ 1, 0 },
+	{ 0, -1 },
 	{ 0, 1 },
 	{ -1, 0 },
-	{ 0, -1 }
+	{ 1, 0 }
 };
 
 struct GuyType {
@@ -137,9 +140,9 @@ std::string GuyType::TYPES[3] {
 struct Guy {
 	int id;
 	Point pos;
-	GuyType type;
 	int speed;
 	int cooldown;
+	GuyType type;
 };
 
 struct Poop {
@@ -161,11 +164,19 @@ template <typename T>
 struct Board {
 	std::array<std::array<T, 35>, 17> board;
 
-	T& operator[](const Point& p) {
+	auto& operator[](const Point& p) {
 		return board[p.y][p.x];
 	}
 
 	auto& operator[](int y) {
+		return board[y];
+	}
+
+	auto& operator[](const Point& p) const {
+		return board[p.y][p.x];
+	}
+
+	auto& operator[](int y) const {
 		return board[y];
 	}
 };
@@ -176,13 +187,12 @@ enum class MoveType {
 
 struct Move {
 	MoveType type = MoveType::NONE;
-	int id;
 	Point pos;
 	GuyType guyType;
 
-	Move(int id) : id { id } { }
+	Move() { }
 
-	void dump(std::stringstream& s) const {
+	void dump(std::stringstream& s, int id) const {
 		if (type == MoveType::NONE)
 			return;
 		if (s.tellp())
@@ -220,6 +230,115 @@ struct Move {
 	void none() {
 		type = MoveType::NONE;
 	}
+
+	bool empty() {
+		return type == MoveType::NONE;
+	}
+};
+
+struct Sim {
+	struct SimCell {
+		int guys = 0;
+		bool visited = false;
+		Point prev;
+	};
+
+	struct SimGuy {
+		Point pos;
+		std::vector<Point> paths;
+		bool stop;
+	};
+
+	Board<SimCell> sb;
+	std::array<SimGuy, 5> sg;
+	std::vector<Point> q;
+
+	int run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
+		for (int y = 0; y < Point::SIZE.y; y++) {
+			for (int x = 0; x < Point::SIZE.x; x++) {
+				sb[{ x, y }] = { };
+			}
+		}
+		for (auto& g : guys) {
+			sg[g.id].paths.clear();
+			auto& m = moves[g.id];
+			if (m.type != MoveType::WALK)
+				continue;
+			q.push_back(g.pos);
+			sb[g.pos].visited = true;
+			for (size_t i = 0; i < q.size(); i++) {
+				for (auto& d : Point::DIRS) {
+					auto p = (q[i] + d).norm();
+					if (!sb[p].visited && board[p].type != CellType::WALL) {
+						q.push_back(p);
+						auto& sc = sb[p];
+						sc.visited = true;
+						sc.prev = q[i];
+					}
+				}
+			}
+			if (sb[m.pos].visited) {
+				for (Point p = m.pos; p != g.pos; p = sb[p].prev)
+					sg[g.id].paths.push_back(p);
+			}
+			for (auto p : q)
+				sb[p] = { };
+			q.clear();
+		}
+		for (auto& g : guys) {
+			sg[g.id].pos = g.pos;
+			sb[g.pos].visited = true;
+		}
+		int res = 0;
+		for (int i = 0; i < steps; i++) {
+			for (int j = 0; j < 2; j++) {
+				for (auto& g : guys) {
+					auto& g2 = sg[g.id];
+					auto& ps = sg[g.id].paths;
+					bool stop = (ps.size() == 0 || (j == 1 && g.speed <= i));
+					g2.stop = stop;
+					if (stop)
+						sb[g2.pos].guys++;
+					else
+						sb[ps.back()].guys++;
+				}
+				bool go = true;
+				while (go) {
+					go = false;
+					for (auto& g : guys) {
+						auto& g2 = sg[g.id];
+						if (g2.stop)
+							continue;
+						if (sb[sg[g.id].paths.back()].guys > 1) {
+							g2.stop = true;
+							sb[g2.pos].guys++;
+							go = true;
+						}
+					}
+				}
+				for (auto& g : guys) {
+					auto& g2 = sg[g.id];
+					sb[g2.pos].guys = 0;
+					if (g2.paths.size())
+						sb[g2.paths.back()].guys = 0;
+					if (!g2.stop) {
+						g2.pos = g2.paths.back();
+						g2.paths.pop_back();
+						bool& v = sb[g2.pos].visited;
+						if (!v) {
+							auto t = board[g2.pos].type;
+							if (t == CellType::POOP)
+								res += 1;
+							if (t == CellType::BIG_POOP)
+								res += 10;
+						}
+						v = true;
+					}
+				}
+			}
+		}
+		return res;
+	}
 };
 
 struct Game {
@@ -230,10 +349,12 @@ struct Game {
 	Board<Cell> cells;
 	std::vector<Guy> guys, bitches;
 	std::vector<Poop> poops;
-	std::array<Move, 5> moves { 0, 1, 2, 3, 4 };
+	std::array<Move, 5> moves;
 
 	// temp
 	int step = 0;
+	Sim sim;
+	std::vector<Guy> walkers;
 
 	// trash
 	std::vector<Point> dst;
@@ -274,8 +395,17 @@ struct Game {
 			}
 		}
 
+		for (int y = 0; y < Point::SIZE.y; y++) {
+			for (int x = 0; x < Point::SIZE.x; x++) {
+				auto& c = cells[{ x, y }];
+				if (c.type == CellType::BIG_POOP)
+					c.type = CellType::FLOOR;
+			}
+		}
+
 		for (auto& p : poops) {
 			cells[p.pos].type = (p.size == 10 ? CellType::BIG_POOP : CellType::POOP);
+			cells[p.pos].seen = step;
 		}
 
 		for (auto& g : guys) {
@@ -291,25 +421,28 @@ struct Game {
 		for (int i = 0; i < guyCnt; i++)
 			moves[i].none();
 
-		auto cmp = [](auto& a, auto& b) {
-			if (a.pos.y == b.pos.y)
-				return a.pos.x < b.pos.x;
-			return a.pos.y < b.pos.y;
-		};
-		std::sort(guys.begin(), guys.end(), cmp);
+		walkers.clear();
 		for (auto& g : guys) {
-			std::sort(poops.begin(), poops.end(), cmp);
-			simplePlay(g, moves[g.id]);
+			auto& m = moves[g.id];
+			simplePlayAttack(g, m);
+			if (m.empty())
+				walkers.push_back(g);
+		}
+		walkTogether();
+		for (auto& g : guys) {
+			auto& m = moves[g.id];
+			if (m.empty())
+				simplePlayWalk(g, m);
 		}
 
 		std::stringstream ans;
-		for (auto& move : moves) {
-			move.dump(ans);
+		for (int i = 0; i < 5; i++) {
+			moves[i].dump(ans, i);
 		}
 		return ans.str();
 	}
 
-	void simplePlay(const Guy& g, Move& move) {
+	void simplePlayAttack(const Guy& g, Move& move) {
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) <= 2 && g.type.down() == b.type) {
 				move.walk(b.pos);
@@ -332,6 +465,44 @@ struct Game {
 			move.speed();
 			return;
 		}
+	}
+
+	void walkTogether() {
+		int best = 0;
+		std::array<Move, 5> moves1;
+		std::vector<Poop> allPoops;
+		for (int y = 0; y < Point::SIZE.y; y++) {
+			for (int x = 0; x < Point::SIZE.x; x++) {
+				Point p { x, y };
+				auto t = cells[p].type;
+				if (t == CellType::POOP)
+					allPoops.push_back({ p, 1 });
+				if (t == CellType::BIG_POOP)
+					allPoops.push_back({ p, 10 });
+			}
+		}
+		auto fill = [&](auto& m) {
+			for (size_t i = 0; i < std::min(walkers.size(), allPoops.size()); i++) {
+				m[walkers[i].id].walk(allPoops[i].pos);
+			}
+		};
+		for (int i = 0; i < 100; i++) {
+			std::shuffle(walkers.begin(), walkers.end(), RND);
+			std::shuffle(allPoops.begin(), allPoops.end(), RND);
+			std::stable_sort(allPoops.begin(), allPoops.end(), [](auto& a, auto& b) {
+				return a.size > b.size;
+			});
+			fill(moves1);
+			int cur = sim.run(cells, guys, moves1, 5);
+			std::cerr << "+: " << cur << std::endl;
+			if (cur > best) {
+				best = cur;
+				fill(moves);
+			}
+		}
+	}
+
+	void simplePlayWalk(const Guy& g, Move& move) {
 		for (auto& p : poops) {
 			if (p.size == 10) {
 				move.walk(p.pos);
@@ -382,7 +553,7 @@ int main()
             int speedTurnsLeft; // unused in wood leagues
             int abilityCooldown; // unused in wood leagues
 			std::cin >> pacId >> mine >> x >> y >> typeId >> speedTurnsLeft >> abilityCooldown; std::cin.ignore();
-			(mine ? game.guys : game.bitches).push_back({ pacId, { x, y }, typeId, speedTurnsLeft, abilityCooldown });
+			(mine ? game.guys : game.bitches).push_back({ pacId, { x, y }, speedTurnsLeft, abilityCooldown, typeId });
         }
         int visiblePelletCount; // all pellets in sight
 		std::cin >> visiblePelletCount; std::cin.ignore();
