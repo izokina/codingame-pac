@@ -324,12 +324,12 @@ struct Sim {
 	struct SimCell {
 		int guys = 0;
 		bool visited = false;
-		Point prev;
 	};
 
 	struct SimGuy {
 		Point pos;
-		std::vector<Point> paths;
+		std::vector<Point> path, done;
+		Board<Point> prev;
 		bool stop;
 	};
 
@@ -337,17 +337,9 @@ struct Sim {
 	std::array<SimGuy, 5> sg;
 	std::vector<Point> q;
 
-	int run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
-		for (int y = 0; y < Point::SIZE.y; y++) {
-			for (int x = 0; x < Point::SIZE.x; x++) {
-				sb[{ x, y }] = { };
-			}
-		}
+	void prepare(const Board<Cell>& board, const std::vector<Guy>& guys) {
 		for (auto& g : guys) {
-			sg[g.id].paths.clear();
-			auto& m = moves[g.id];
-			if (m.type != MoveType::WALK)
-				continue;
+			auto& g2 = sg[g.id];
 			q.push_back(g.pos);
 			sb[g.pos].visited = true;
 			for (size_t i = 0; i < q.size(); i++) {
@@ -355,22 +347,29 @@ struct Sim {
 					auto p = (q[i] + d).norm();
 					if (!sb[p].visited && board[p].type != CellType::WALL) {
 						q.push_back(p);
-						auto& sc = sb[p];
-						sc.visited = true;
-						sc.prev = q[i];
+						sb[p].visited = true;
+						g2.prev[p] = q[i];
 					}
 				}
 			}
-			if (sb[m.pos].visited) {
-				for (Point p = m.pos; p != g.pos; p = sb[p].prev)
-					sg[g.id].paths.push_back(p);
-			}
 			for (auto p : q)
-				sb[p] = { };
+				sb[p].visited = false;
 			q.clear();
 		}
+	}
+
+	int run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
 		for (auto& g : guys) {
-			sg[g.id].pos = g.pos;
+			auto& m = moves[g.id];
+			if (m.type != MoveType::WALK)
+				continue;
+			auto& g2 = sg[g.id];
+			for (Point p = m.pos; p != g.pos; p = g2.prev[p])
+				g2.path.push_back(p);
+		}
+		for (auto& g : guys) {
+			auto& g2 = sg[g.id];
+			g2.done.push_back(g2.pos = g.pos);
 			sb[g.pos].visited = true;
 		}
 		int res = 0;
@@ -378,7 +377,7 @@ struct Sim {
 			for (int j = 0; j < 2; j++) {
 				for (auto& g : guys) {
 					auto& g2 = sg[g.id];
-					auto& ps = sg[g.id].paths;
+					auto& ps = sg[g.id].path;
 					bool stop = (ps.size() == 0 || (j == 1 && g.speed <= i));
 					g2.stop = stop;
 					if (stop)
@@ -393,7 +392,7 @@ struct Sim {
 						auto& g2 = sg[g.id];
 						if (g2.stop)
 							continue;
-						if (sb[sg[g.id].paths.back()].guys > 1) {
+						if (sb[sg[g.id].path.back()].guys > 1) {
 							g2.stop = true;
 							sb[g2.pos].guys++;
 							go = true;
@@ -403,11 +402,11 @@ struct Sim {
 				for (auto& g : guys) {
 					auto& g2 = sg[g.id];
 					sb[g2.pos].guys = 0;
-					if (g2.paths.size())
-						sb[g2.paths.back()].guys = 0;
+					if (g2.path.size())
+						sb[g2.path.back()].guys = 0;
 					if (!g2.stop) {
-						g2.pos = g2.paths.back();
-						g2.paths.pop_back();
+						g2.done.push_back(g2.pos = g2.path.back());
+						g2.path.pop_back();
 						bool& v = sb[g2.pos].visited;
 						if (!v) {
 							auto t = board[g2.pos].type;
@@ -420,6 +419,14 @@ struct Sim {
 					}
 				}
 			}
+		}
+		for (auto& g : guys) {
+			auto& g2 = sg[g.id];
+			for (auto p : g2.done) {
+				sb[p].visited = false;
+			}
+			g2.path.clear();
+			g2.done.clear();
 		}
 		return res;
 	}
@@ -553,8 +560,6 @@ struct Game {
 	}
 
 	void walkTogether() {
-		int best = 0;
-		std::array<Move, 5> moves1;
 		std::vector<Poop> allPoops;
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
@@ -571,6 +576,9 @@ struct Game {
 				m[walkers[i].id].walk(allPoops[i].pos, "SMART MOVE");
 			}
 		};
+		sim.prepare(cells, guys);
+		int best = 0;
+		std::array<Move, 5> moves1;
 		Cycler cycler { 45'000'000, timer };
 		int lim;
 		timer.spam("Start sim");
