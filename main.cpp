@@ -493,14 +493,18 @@ struct Game {
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				auto& c = cells[{ x, y }];
-				if (c.type == CellType::BIG_POOP)
+				if (c.type == CellType::BIG_POOP) {
 					c.type = CellType::FLOOR;
+					c.seen = step;
+				}
 			}
 		}
 
 		for (auto& p : poops) {
-			cells[p.pos].type = (p.size == 10 ? CellType::BIG_POOP : CellType::POOP);
-			cells[p.pos].seen = step;
+			auto& c = cells[p.pos];
+			c.type = (p.size == 10 ? CellType::BIG_POOP : CellType::POOP);
+			if (c.seen != step)
+				fprintf(stderr, "Ooops! See poop on %dx%x\n", p.pos.x, p.pos.y);
 		}
 
 		for (auto& g : guys) {
