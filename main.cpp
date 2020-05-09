@@ -267,6 +267,7 @@ struct Move {
 	MoveType type = MoveType::NONE;
 	Point pos;
 	GuyType guyType;
+	const char* msg;
 
 	Move() { }
 
@@ -289,20 +290,25 @@ struct Move {
 				std::cerr << "NONE IN SWITCH!!!" << std::endl;
 				exit(5);
 		}
+		if (msg != nullptr)
+			s << ' ' << msg;
 	}
 
-	void walk(const Point& p) {
+	void walk(const Point& p, const char* msg = nullptr) {
 		type = MoveType::WALK;
 		pos = p;
+		this->msg = msg;
 	}
 
-	void turn(GuyType t) {
+	void turn(GuyType t, const char* msg = nullptr) {
 		type = MoveType::TURN;
 		guyType = t;
+		this->msg = msg;
 	}
 
-	void speed() {
+	void speed(const char* msg = nullptr) {
 		type = MoveType::SPEED;
+		this->msg = msg;
 	}
 
 	void none() {
@@ -524,13 +530,13 @@ struct Game {
 	void simplePlayAttack(const Guy& g, Move& move) {
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) <= 2 && g.type.down() == b.type) {
-				move.walk(b.pos);
+				move.walk(b.pos, "GET YOU");
 				return;
 			}
 		}
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) == 1 && g.cooldown == 0) {
-				move.turn(b.type.up());
+				move.turn(b.type.up(), "COME ON!");
 				return;
 			}
 		}
@@ -541,7 +547,7 @@ struct Game {
 			}
 		}
 		if (far && g.cooldown == 0) {
-			move.speed();
+			move.speed("WHOOP!");
 			return;
 		}
 	}
@@ -562,11 +568,12 @@ struct Game {
 		}
 		auto fill = [&](auto& m) {
 			for (size_t i = 0; i < std::min(walkers.size(), allPoops.size()); i++) {
-				m[walkers[i].id].walk(allPoops[i].pos);
+				m[walkers[i].id].walk(allPoops[i].pos, "SMART MOVE");
 			}
 		};
 		Cycler cycler { 45'000'000, timer };
 		int lim;
+		timer.spam("Start sim");
 		while ((lim = cycler.getCycles())) {
 			// timer.spam("Cycle...");
 			for (int i = 0; i < lim; i++) {
@@ -591,14 +598,14 @@ struct Game {
 	void simplePlayWalk(const Guy& g, Move& move) {
 		for (auto& p : poops) {
 			if (p.size == 10) {
-				move.walk(p.pos);
+				move.walk(p.pos, "IDIOT 1");
 				p = poops.back();
 				poops.pop_back();
 				return;
 			}
 		}
 		for (auto& p : poops) {
-			move.walk(p.pos);
+			move.walk(p.pos, "IDIOT 2");
 			p = poops.back();
 			poops.pop_back();
 			return;
@@ -606,7 +613,7 @@ struct Game {
 		if (g.pos.dst(dst[g.id]) <= 2) {
 			dst[g.id] = (dst[g.id] + Point { 3, 11 }).norm();
 		}
-		move.walk(dst[g.id]);
+		move.walk(dst[g.id], "IDIOT 3");
 	}
 } game;
 
@@ -652,7 +659,6 @@ int main()
         }
 
 		game.timer = { };
-		game.timer.spam("Input done");
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
