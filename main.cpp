@@ -328,45 +328,48 @@ struct Sim {
 
 	struct SimGuy {
 		Point pos;
-		std::vector<Point> path, done;
-		Board<Point> prev;
+		Point target;
+		std::vector<Point> done;
 		bool stop;
 	};
 
 	Board<SimCell> sb;
+	Board<Board<Point>> dir;
 	std::array<SimGuy, 5> sg;
 	std::vector<Point> q;
 
-	void prepare(const Board<Cell>& board, const std::vector<Guy>& guys) {
-		for (auto& g : guys) {
-			auto& g2 = sg[g.id];
-			q.push_back(g.pos);
-			sb[g.pos].visited = true;
-			for (size_t i = 0; i < q.size(); i++) {
-				for (auto& d : Point::DIRS) {
-					auto p = (q[i] + d).norm();
-					if (!sb[p].visited && board[p].type != CellType::WALL) {
-						q.push_back(p);
-						sb[p].visited = true;
-						g2.prev[p] = q[i];
+	void init(const Board<Cell>& board) {
+		for (int y = 0; y < Point::SIZE.y; y++) {
+			for (int x = 0; x < Point::SIZE.x; x++) {
+				Point pos { x, y };
+				if (board[pos].type == CellType::WALL)
+					continue;
+				auto& dirr = dir[pos];
+				q.push_back(pos);
+				sb[pos].visited = true;
+				dirr[pos] = pos;
+				for (size_t i = 0; i < q.size(); i++) {
+					auto qq = q[i];
+					for (auto& d : Point::DIRS) {
+						auto p = (qq + d).norm();
+						if (!sb[p].visited && board[p].type != CellType::WALL) {
+							q.push_back(p);
+							sb[p].visited = true;
+							if (qq == pos)
+								dirr[p] = p;
+							else
+								dirr[p] = dirr[qq];
+						}
 					}
 				}
+				for (auto p : q)
+					sb[p].visited = false;
+				q.clear();
 			}
-			for (auto p : q)
-				sb[p].visited = false;
-			q.clear();
 		}
 	}
 
 	double run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
-		for (auto& g : guys) {
-			auto& m = moves[g.id];
-			if (m.type != MoveType::WALK)
-				continue;
-			auto& g2 = sg[g.id];
-			for (Point p = m.pos; p != g.pos; p = g2.prev[p])
-				g2.path.push_back(p);
-		}
 		for (auto& g : guys) {
 			auto& g2 = sg[g.id];
 			g2.done.push_back(g2.pos = g.pos);
@@ -378,13 +381,15 @@ struct Sim {
 			for (int j = 0; j < 2; j++) {
 				for (auto& g : guys) {
 					auto& g2 = sg[g.id];
-					auto& ps = sg[g.id].path;
-					bool stop = (ps.size() == 0 || (j == 1 && g.speed <= i));
+					auto& m = moves[g.id];
+					bool stop = (m.type != MoveType::WALK || g.pos == m.pos || (j == 1 && g.speed <= i));
 					g2.stop = stop;
-					if (stop)
-						sb[g2.pos].guys++;
-					else
-						sb[ps.back()].guys++;
+					if (stop) {
+						g2.target = g2.pos;
+					} else {
+						g2.target = dir[g2.pos][m.pos];
+					}
+					sb[g2.target].guys++;
 				}
 				bool go = true;
 				while (go) {
@@ -393,7 +398,7 @@ struct Sim {
 						auto& g2 = sg[g.id];
 						if (g2.stop)
 							continue;
-						if (sb[sg[g.id].path.back()].guys > 1) {
+						if (sb[g2.target].guys > 1) {
 							g2.stop = true;
 							sb[g2.pos].guys++;
 							go = true;
@@ -403,11 +408,9 @@ struct Sim {
 				for (auto& g : guys) {
 					auto& g2 = sg[g.id];
 					sb[g2.pos].guys = 0;
-					if (g2.path.size())
-						sb[g2.path.back()].guys = 0;
+					sb[g2.target].guys = 0;
 					if (!g2.stop) {
-						g2.done.push_back(g2.pos = g2.path.back());
-						g2.path.pop_back();
+						g2.done.push_back(g2.pos = g2.target);
 						bool& v = sb[g2.pos].visited;
 						if (!v) {
 							auto t = board[g2.pos].type;
@@ -427,7 +430,6 @@ struct Sim {
 			for (auto p : g2.done) {
 				sb[p].visited = false;
 			}
-			g2.path.clear();
 			g2.done.clear();
 		}
 		return res;
@@ -440,13 +442,13 @@ struct Game {
 
 	// global
 	Board<Cell> cells;
+	Sim sim;
 	std::vector<Guy> guys, bitches;
 	std::vector<Poop> poops;
 	std::array<Move, 5> moves;
 
 	// temp
 	int step = 0;
-	Sim sim;
 	std::vector<Guy> walkers;
 	Timer timer;
 	std::vector<Point> poops1, poops2;
@@ -463,7 +465,7 @@ struct Game {
 		poops.clear();
 	}
 
-	void update() {
+	void init() {
 		if (step == 0) {
 			guyCnt = (int) guys.size();
 			for (auto& g : guys) {
@@ -476,7 +478,9 @@ struct Game {
 			for (size_t i = 1; i < dst.size(); i++)
 				dst[i] = (dst[i] + dst[i - 1]).norm();
 		}
+	}
 
+	void update() {
 		for (auto& g : guys) {
 			for (auto& d : Point::DIRS) {
 				Point cur = g.pos;
@@ -618,7 +622,6 @@ struct Game {
 			perm1u.clear();
 			perm2u.clear();
 		};
-		sim.prepare(cells, guys);
 		double best = 0;
 		std::array<Move, 5> moves1;
 		Cycler cycler { 45'000'000, timer };
@@ -678,6 +681,7 @@ int main()
 		for (int x = 0; x < width; x++)
 			game.cells[y][x].type = (row[x] == '#' ? CellType::WALL : CellType::POOP);
     }
+	game.sim.init(game.cells);
 
     // game loop
     while (1) {
@@ -707,11 +711,8 @@ int main()
 			game.poops.push_back({ { x, y }, value });
         }
 
+		game.init();
 		game.timer = { };
-
-        // Write an action using cout. DON'T FORGET THE "<< endl"
-        // To debug: cerr << "Debug messages..." << endl;
-
 		game.update();
 
 		std::cout << game.simplePlay() << std::endl;
