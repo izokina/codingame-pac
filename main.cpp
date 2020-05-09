@@ -447,6 +447,9 @@ struct Game {
 	Sim sim;
 	std::vector<Guy> walkers;
 	Timer timer;
+	std::vector<Point> poops1, poops2;
+	std::vector<int> perm1, perm2;
+	std::vector<int> perm1u, perm2u;
 
 	// trash
 	std::vector<Point> dst;
@@ -560,21 +563,54 @@ struct Game {
 	}
 
 	void walkTogether() {
-		std::vector<Poop> allPoops;
+		poops1.clear();
+		poops2.clear();
+		perm1.clear();
+		perm2.clear();
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point p { x, y };
 				auto t = cells[p].type;
-				if (t == CellType::POOP)
-					allPoops.push_back({ p, 1 });
 				if (t == CellType::BIG_POOP)
-					allPoops.push_back({ p, 10 });
+					poops1.push_back(p);
+				if (t == CellType::POOP)
+					poops2.push_back(p);
 			}
 		}
+		for (int i = 0; i < (int) poops1.size(); i++)
+			perm1.push_back(i);
+		for (int i = 0; i < (int) poops2.size(); i++)
+			perm2.push_back(i);
 		auto fill = [&](auto& m) {
-			for (size_t i = 0; i < std::min(walkers.size(), allPoops.size()); i++) {
-				m[walkers[i].id].walk(allPoops[i].pos, "SMART MOVE");
+			size_t i = 0;
+			while (true) {
+				if (i == walkers.size() || perm2.size() == 0)
+					break;
+				Point p;
+				if (perm1.size()) {
+					int idx = RND() % perm1.size();
+					int idxx = perm1[idx];
+					p = poops1[idxx];
+					perm1u.push_back(idxx);
+					perm1[idx] = perm1.back();
+					perm1.pop_back();
+				} else {
+					int idx = RND() % perm2.size();
+					int idxx = perm2[idx];
+					p = poops2[idxx];
+					perm2u.push_back(idxx);
+					perm2[idx] = perm2.back();
+					perm2.pop_back();
+				}
+				m[walkers[i].id].walk(p, "SMART");
+				i++;
 			}
+			for (auto j : perm1u)
+				perm1.push_back(j);
+			for (auto j : perm2u)
+				perm2.push_back(j);
+			perm1u.clear();
+			perm2u.clear();
 		};
 		sim.prepare(cells, guys);
 		int best = 0;
@@ -586,16 +622,15 @@ struct Game {
 			// timer.spam("Cycle...");
 			for (int i = 0; i < lim; i++) {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
-				std::shuffle(allPoops.begin(), allPoops.end(), RND);
-				std::stable_sort(allPoops.begin(), allPoops.end(), [](auto& a, auto& b) {
-					return a.size > b.size;
-				});
 				fill(moves1);
 				int cur = sim.run(cells, guys, moves1, 5);
 				// std::cerr << "+: " << cur << std::endl;
 				if (cur > best) {
+					fprintf(stderr, "New best: %d -> %d\n", best, cur);
 					best = cur;
-					fill(moves);
+					for (auto& g : walkers) {
+						moves[g.id] = moves1[g.id];
+					}
 				}
 			}
 		}
