@@ -100,12 +100,6 @@ struct Point {
 
 	int x, y;
 
-	Point() : Point { 0, 0 } { }
-
-	Point(int x, int y) : x { x }, y { y } { }
-
-	Point(const Point&) = default;
-
 	Point operator +(const Point& p) const {
 		return { x + p.x, y + p.y };
 	}
@@ -166,11 +160,11 @@ const Point Point::DIRS[4] {
 };
 
 struct GuyType {
-	GuyType() : GuyType(0) { }
+	uint8_t lvl;
 
-	GuyType(const std::string& s) {
+	static GuyType get(const std::string& s) {
 		static const auto TM = genTypesMap();
-		lvl = TM.find(s)->second;
+		return { TM.find(s)->second };
 	}
 
 	bool operator <(const GuyType& t) const {
@@ -194,10 +188,8 @@ struct GuyType {
 	}
 
 private:
-	GuyType(uint8_t l) : lvl { l } { }
-	uint8_t lvl;
-	uint8_t UP[3] { 1, 2, 0 };
-	uint8_t DOWN[3] { 2, 0, 1 };
+	static constexpr uint8_t UP[3] { 1, 2, 0 };
+	static constexpr uint8_t DOWN[3] { 2, 0, 1 };
 
 	static std::unordered_map<std::string, uint8_t> genTypesMap() {
 		std::unordered_map<std::string, uint8_t> res;
@@ -265,23 +257,24 @@ enum class MoveType {
 
 struct Move {
 	MoveType type = MoveType::NONE;
-	Point pos;
-	GuyType guyType;
-	const char* msg;
+	union {
+		Point pos;
+		GuyType guyType;
+	} data;
 
 	Move() { }
 
-	void dump(std::stringstream& s, int id) const {
+	void dumpSimple(std::stringstream& s, int id) const {
 		if (type == MoveType::NONE)
 			return;
 		if (s.tellp())
 			s << '|';
 		switch(type) {
 			case MoveType::WALK:
-				s << "MOVE " << id << ' ' << pos.x << ' ' << pos.y;
+				s << "MOVE " << id << ' ' << data.pos.x << ' ' << data.pos.y;
 				break;
 			case MoveType::TURN:
-				s << "SWITCH " << id << ' ' << guyType.str();
+				s << "SWITCH " << id << ' ' << data.guyType.str();
 				break;
 			case MoveType::SPEED:
 				s << "SPEED " << id;
@@ -290,25 +283,20 @@ struct Move {
 				std::cerr << "NONE IN SWITCH!!!" << std::endl;
 				exit(5);
 		}
-		if (msg != nullptr)
-			s << ' ' << msg;
 	}
 
-	void walk(const Point& p, const char* msg = nullptr) {
+	void walk(const Point& p) {
 		type = MoveType::WALK;
-		pos = p;
-		this->msg = msg;
+		data.pos = p;
 	}
 
-	void turn(GuyType t, const char* msg = nullptr) {
+	void turn(GuyType t) {
 		type = MoveType::TURN;
-		guyType = t;
-		this->msg = msg;
+		data.guyType = t;
 	}
 
-	void speed(const char* msg = nullptr) {
+	void speed() {
 		type = MoveType::SPEED;
-		this->msg = msg;
 	}
 
 	void none() {
@@ -317,6 +305,37 @@ struct Move {
 
 	bool empty() {
 		return type == MoveType::NONE;
+	}
+};
+
+struct MoveFull : public Move {
+	const char* msg;
+
+	MoveFull() = default;
+
+	MoveFull(const Move& move, const char* msg = nullptr) : Move(move), msg(msg) { }
+
+	void dump(std::stringstream& s, int id) const {
+		if (type == MoveType::NONE)
+			return;
+		Move::dumpSimple(s, id);
+		if (msg != nullptr)
+			s << ' ' << msg;
+	}
+
+	void walk(const Point& p, const char* msg) {
+		Move::walk(p);
+		this->msg = msg;
+	}
+
+	void turn(GuyType t, const char* msg) {
+		Move::turn(t);
+		this->msg = msg;
+	}
+
+	void speed(const char* msg) {
+		Move::speed();
+		this->msg = msg;
 	}
 };
 
@@ -342,9 +361,9 @@ struct Sim {
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point pos { x, y };
+				auto& dirr = dir[pos] = { pos };
 				if (board[pos].type == CellType::WALL)
 					continue;
-				auto& dirr = dir[pos];
 				q.push_back(pos);
 				sb[pos].visited = true;
 				dirr[pos] = pos;
@@ -382,12 +401,12 @@ struct Sim {
 				for (auto& g : guys) {
 					auto& g2 = sg[g.id];
 					auto& m = moves[g.id];
-					bool stop = (m.type != MoveType::WALK || g.pos == m.pos || (j == 1 && g.speed <= i));
+					bool stop = (m.type != MoveType::WALK || g.pos == m.data.pos || (j == 1 && g.speed <= i));
 					g2.stop = stop;
 					if (stop) {
 						g2.target = g2.pos;
 					} else {
-						g2.target = dir[g2.pos][m.pos];
+						g2.target = dir[g2.pos][m.data.pos];
 					}
 					sb[g2.target].guys++;
 				}
@@ -445,7 +464,7 @@ struct Game {
 	Sim sim;
 	std::vector<Guy> guys, bitches;
 	std::vector<Poop> poops;
-	std::array<Move, 5> moves;
+	std::array<MoveFull, 5> moves;
 
 	// temp
 	int step = 0;
@@ -547,7 +566,7 @@ struct Game {
 		return ans.str();
 	}
 
-	void simplePlayAttack(const Guy& g, Move& move) {
+	void simplePlayAttack(const Guy& g, MoveFull& move) {
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) <= 2 && g.type.down() == b.type) {
 				move.walk(b.pos, "GET YOU");
@@ -596,7 +615,7 @@ struct Game {
 			while (true) {
 				if (i == walkers.size() || perm2.size() == 0)
 					break;
-				Point p;
+				Point p { 0, 0 };
 				if (perm1.size()) {
 					int idx = RND() % perm1.size();
 					int idxx = perm1[idx];
@@ -612,7 +631,7 @@ struct Game {
 					perm2[idx] = perm2.back();
 					perm2.pop_back();
 				}
-				m[walkers[i].id].walk(p, "SMART");
+				m[walkers[i].id].walk(p);
 				i++;
 			}
 			for (auto j : perm1u)
@@ -638,7 +657,7 @@ struct Game {
 					fprintf(stderr, "New best: %lf -> %lf\n", best, cur);
 					best = cur;
 					for (auto& g : walkers) {
-						moves[g.id] = moves1[g.id];
+						moves[g.id] = { moves1[g.id], "SMART" };
 					}
 				}
 			}
@@ -647,7 +666,7 @@ struct Game {
 		std::cerr << "Total sim: " << cycler.total() << std::endl;
 	}
 
-	void simplePlayWalk(const Guy& g, Move& move) {
+	void simplePlayWalk(const Guy& g, MoveFull& move) {
 		for (auto& p : poops) {
 			if (p.size == 10) {
 				move.walk(p.pos, "IDIOT 1");
@@ -699,7 +718,8 @@ int main()
             int speedTurnsLeft; // unused in wood leagues
             int abilityCooldown; // unused in wood leagues
 			std::cin >> pacId >> mine >> x >> y >> typeId >> speedTurnsLeft >> abilityCooldown; std::cin.ignore();
-			(mine ? game.guys : game.bitches).push_back({ pacId, { x, y }, speedTurnsLeft, abilityCooldown, typeId });
+			(mine ? game.guys : game.bitches)
+				.push_back({ pacId, { x, y }, speedTurnsLeft, abilityCooldown, GuyType::get(typeId) });
         }
         int visiblePelletCount; // all pellets in sight
 		std::cin >> visiblePelletCount; std::cin.ignore();
