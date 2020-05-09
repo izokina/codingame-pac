@@ -9,12 +9,90 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <random>
+#include <chrono>
 
 /**
  * Grab the pellets as fast as you can!
  **/
 
 std::mt19937 RND(324);
+
+using Clock = std::chrono::high_resolution_clock;
+using TimeNano = std::chrono::nanoseconds;
+using TimeMilli = std::chrono::milliseconds;
+
+class Timer {
+public:
+	TimeNano get() const {
+		Clock::time_point finish = Clock::now();
+		return std::chrono::duration_cast<TimeNano>(finish - start);
+	}
+
+	TimeMilli getMilli() const {
+		return std::chrono::duration_cast<TimeMilli>(get());
+	}
+
+	double getMilliDouble() const {
+		return std::chrono::duration_cast<std::chrono::duration<double, std::milli>>(get()).count();
+	}
+
+	void spam(const char* msg) {
+		fprintf(stderr, "Time %s: %10.6lf ms\n", msg, getMilliDouble());
+	}
+
+private:
+	Clock::time_point start = Clock::now();
+};
+
+class Alarm {
+public:
+	Alarm(TimeNano::rep ttl, Timer& timer) : ttl(ttl), timer(timer) { }
+
+	bool ended() const {
+		return timer.get().count() > ttl;
+	}
+
+private:
+	const TimeNano::rep ttl;
+	Timer& timer;
+};
+
+class Cycler {
+public:
+	static const int PHASES = 10;
+	Cycler(TimeNano::rep ttl, Timer& timer) : ttl(ttl), timer(timer) { }
+
+	int getCycles() {
+		int c = calc();
+		cycles += c;
+		return c;
+	}
+
+	int total() const {
+		return cycles;
+	}
+
+private:
+	int calc() {
+		if (cycles == 0)
+			return 1;
+		if (timer.get().count() >= ttl)
+			return 0;
+		auto phases = (timer.get().count() * PHASES) / ttl;
+		if (phases == 0)
+			return cycles;
+		auto res = cycles / phases;
+		if (phases + 2 >= PHASES)
+			res /= 2;
+		if (phases + 1 >= PHASES)
+			res /= 2;
+		return std::max<int>(1, res);
+	}
+
+	int cycles = 0;
+	const TimeNano::rep ttl;
+	Timer& timer;
+};
 
 struct Point {
 	static Point SIZE;
@@ -355,6 +433,7 @@ struct Game {
 	int step = 0;
 	Sim sim;
 	std::vector<Guy> walkers;
+	Timer timer;
 
 	// trash
 	std::vector<Point> dst;
@@ -486,20 +565,27 @@ struct Game {
 				m[walkers[i].id].walk(allPoops[i].pos);
 			}
 		};
-		for (int i = 0; i < 100; i++) {
-			std::shuffle(walkers.begin(), walkers.end(), RND);
-			std::shuffle(allPoops.begin(), allPoops.end(), RND);
-			std::stable_sort(allPoops.begin(), allPoops.end(), [](auto& a, auto& b) {
-				return a.size > b.size;
-			});
-			fill(moves1);
-			int cur = sim.run(cells, guys, moves1, 5);
-			std::cerr << "+: " << cur << std::endl;
-			if (cur > best) {
-				best = cur;
-				fill(moves);
+		Cycler cycler { 45'000'000, timer };
+		int lim;
+		while ((lim = cycler.getCycles())) {
+			// timer.spam("Cycle...");
+			for (int i = 0; i < lim; i++) {
+				std::shuffle(walkers.begin(), walkers.end(), RND);
+				std::shuffle(allPoops.begin(), allPoops.end(), RND);
+				std::stable_sort(allPoops.begin(), allPoops.end(), [](auto& a, auto& b) {
+					return a.size > b.size;
+				});
+				fill(moves1);
+				int cur = sim.run(cells, guys, moves1, 5);
+				// std::cerr << "+: " << cur << std::endl;
+				if (cur > best) {
+					best = cur;
+					fill(moves);
+				}
 			}
 		}
+		// timer.spam("Cycle...");
+		std::cerr << "Total sim: " << cycler.total() << std::endl;
 	}
 
 	void simplePlayWalk(const Guy& g, Move& move) {
@@ -564,6 +650,9 @@ int main()
 			std::cin >> x >> y >> value; std::cin.ignore();
 			game.poops.push_back({ { x, y }, value });
         }
+
+		game.timer = { };
+		game.timer.spam("Input done");
 
         // Write an action using cout. DON'T FORGET THE "<< endl"
         // To debug: cerr << "Debug messages..." << endl;
