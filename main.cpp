@@ -358,7 +358,7 @@ struct Sim {
 		}
 	}
 
-	int run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
+	double run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<Move, 5>& moves, int steps) {
 		for (auto& g : guys) {
 			auto& m = moves[g.id];
 			if (m.type != MoveType::WALK)
@@ -372,7 +372,8 @@ struct Sim {
 			g2.done.push_back(g2.pos = g.pos);
 			sb[g.pos].visited = true;
 		}
-		int res = 0;
+		double res = 0;
+		double k = 1.0;
 		for (int i = 0; i < steps; i++) {
 			for (int j = 0; j < 2; j++) {
 				for (auto& g : guys) {
@@ -411,14 +412,15 @@ struct Sim {
 						if (!v) {
 							auto t = board[g2.pos].type;
 							if (t == CellType::POOP)
-								res += 1;
+								res += k;
 							if (t == CellType::BIG_POOP)
-								res += 10;
+								res += 10 * k;
 						}
 						v = true;
 					}
 				}
 			}
+			k *= 0.99;
 		}
 		for (auto& g : guys) {
 			auto& g2 = sg[g.id];
@@ -617,7 +619,7 @@ struct Game {
 			perm2u.clear();
 		};
 		sim.prepare(cells, guys);
-		int best = 0;
+		double best = 0;
 		std::array<Move, 5> moves1;
 		Cycler cycler { 45'000'000, timer };
 		int lim;
@@ -627,10 +629,10 @@ struct Game {
 			for (int i = 0; i < lim; i++) {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
 				fill(moves1);
-				int cur = sim.run(cells, guys, moves1, 5);
+				double cur = sim.run(cells, guys, moves1, 5);
 				// std::cerr << "+: " << cur << std::endl;
 				if (cur > best) {
-					fprintf(stderr, "New best: %d -> %d\n", best, cur);
+					fprintf(stderr, "New best: %lf -> %lf\n", best, cur);
 					best = cur;
 					for (auto& g : walkers) {
 						moves[g.id] = moves1[g.id];
