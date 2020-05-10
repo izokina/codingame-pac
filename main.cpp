@@ -610,13 +610,15 @@ struct Game {
 				}
 			}
 		}
+		/*
 		bool far = true;
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) <= 10) {
 				far = false;
 			}
 		}
-		if (far && g.cooldown == 0) {
+		*/
+		if (g.cooldown == 0) {
 			move.speed("WHOOP!");
 			return;
 		}
@@ -632,10 +634,10 @@ struct Game {
 			g.guys[i].moves.clear();
 		}
 		for (int i : w) {
-			if (g.poops2.size() == 0)
+			if (g.poops1.size() == 0 && g.poops2.size() == 0)
 				break;
 			Point p { 0, 0 };
-			if (g.poops1.size()) {
+			if (g.poops1.size() && (g.poops2.size() == 0 || ((RND() & 3) != 0))) {
 				int idx = RND() % g.poops1.size();
 				p = g.poops1[idx];
 				g.poops1[idx] = g.poops1.back();
