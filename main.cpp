@@ -470,6 +470,11 @@ struct Sim {
 };
 
 struct Game {
+	struct Gins {
+		std::vector<Sim::GuyIn> guys;
+		std::vector<Point> poops1, poops2;
+	};
+
 	// const
 	int guyCnt;
 
@@ -483,9 +488,8 @@ struct Game {
 	// temp
 	int step = 0;
 	Timer timer;
-	std::vector<int> walkers;
-	std::vector<Sim::GuyIn> gins;
-	std::vector<Point> poops1, poops2;
+	std::vector<int> walkers, walkers2;
+	Gins gins, gins2;
 
 	// trash
 	std::vector<Point> dst;
@@ -605,52 +609,54 @@ struct Game {
 		}
 	}
 
-	void fillGins() {
-		for (int i : walkers) {
-			for (auto& m : gins[i].moves) {
+	void fillGins(Gins& g, const std::vector<int>& w) {
+		for (int i : w) {
+			for (auto& m : g.guys[i].moves) {
 				if (m.type == MoveType::WALK) {
-					(cells[m.data.pos].type == CellType::POOP ? poops2 : poops1).push_back(m.data.pos);
+					(cells[m.data.pos].type == CellType::POOP ? g.poops2 : g.poops1).push_back(m.data.pos);
 				}
 			}
-			gins[i].moves.clear();
+			g.guys[i].moves.clear();
 		}
-		for (int i : walkers) {
-			if (poops2.size() == 0)
+		for (int i : w) {
+			if (g.poops2.size() == 0)
 				break;
 			Point p { 0, 0 };
-			if (poops1.size()) {
-				int idx = RND() % poops1.size();
-				p = poops1[idx];
-				poops1[idx] = poops1.back();
-				poops1.pop_back();
+			if (g.poops1.size()) {
+				int idx = RND() % g.poops1.size();
+				p = g.poops1[idx];
+				g.poops1[idx] = g.poops1.back();
+				g.poops1.pop_back();
 			} else {
-				int idx = RND() % poops2.size();
-				p = poops2[idx];
-				poops2[idx] = poops2.back();
-				poops2.pop_back();
+				int idx = RND() % g.poops2.size();
+				p = g.poops2[idx];
+				g.poops2[idx] = g.poops2.back();
+				g.poops2.pop_back();
 			}
 			Move m;
 			m.walk(p);
-			gins[i].moves.push_back(m);
+			g.guys[i].moves.push_back(m);
 		}
 	}
 
 	void walkTogether() {
-		poops1.clear();
-		poops2.clear();
+		gins.poops1.clear();
+		gins.poops2.clear();
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point p { x, y };
 				auto t = cells[p].type;
 				if (t == CellType::BIG_POOP)
-					poops1.push_back(p);
+					gins.poops1.push_back(p);
 				if (t == CellType::POOP)
-					poops2.push_back(p);
+					gins.poops2.push_back(p);
 			}
 		}
-		gins.clear();
+		gins.guys.clear();
 		for (auto& g : guys)
-			gins.push_back({ g, { moves[g.id] } });
+			gins.guys.push_back({ g, { moves[g.id] } });
+		std::shuffle(walkers.begin(), walkers.end(), RND);
+		fillGins(gins, walkers);
 		double best = 0;
 		Cycler cycler { 45'000'000, timer };
 		int lim;
@@ -659,18 +665,26 @@ struct Game {
 			// timer.spam("Cycle...");
 			for (int i = 0; i < lim; i++) {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
-				fillGins();
-				double cur = sim.run(cells, gins, 5);
+				walkers2.clear();
+				size_t lim = std::min<size_t>(walkers.size(), 2);
+				for (size_t i = 0; i < lim; i++)
+					walkers2.push_back(walkers[i]);
+				gins2 = gins;
+				fillGins(gins2, walkers2);
+				double cur = sim.run(cells, gins2.guys, 5);
 				// std::cerr << "+: " << cur << std::endl;
 				if (cur > best) {
-					fprintf(stderr, "New best: %lf -> %lf\n", best, cur);
-					best = cur;
 					for (int j : walkers) {
-						auto& g = gins[j];
+						auto& g = gins2.guys[j];
 						auto& m = g.moves;
 						if (m.size())
 							moves[g.guy.id] = { m[0], "SMART" };
 					}
+				}
+				if (cur > best) {
+					fprintf(stderr, "New best: %lf -> %lf\n", best, cur);
+					best = cur;
+					gins = gins2;
 				}
 			}
 		}
