@@ -133,6 +133,10 @@ struct Point {
 		return !(*this == p);
 	}
 
+	Point rot90() const {
+		return { -y, x };
+	}
+
 	Point mirror() const {
 		return { SIZE.x - 1 - x, y };
 	}
@@ -585,16 +589,25 @@ struct Game {
 	}
 
 	void simplePlayAttack(const Guy& g, MoveFull& move) {
+		/*
 		for (auto& b : bitches) {
 			if (g.pos.dst(b.pos) <= 2 && g.type.down() == b.type) {
-				move.walk(b.pos, "GET YOU");
+				move.walk(b.pos, "CHASE");
 				return;
 			}
 		}
+		*/
 		for (auto& b : bitches) {
-			if (g.pos.dst(b.pos) == 1 && g.cooldown == 0) {
-				move.turn(b.type.up(), "COME ON!");
-				return;
+			if (g.type.up() == b.type && g.pos.dst(b.pos) == 1) {
+				if (g.cooldown == 0) {
+					move.turn(b.type.up(), "TRAP");
+					return;
+				} else {
+					Point d = g.pos - b.pos;
+					Point dr = d.rot90();
+					move.walk((g.pos + d + dr).norm(), "EVADE");
+					return;
+				}
 			}
 		}
 		bool far = true;
