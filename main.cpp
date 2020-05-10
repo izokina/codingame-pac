@@ -486,8 +486,6 @@ struct Game {
 	std::vector<int> walkers;
 	std::vector<Sim::GuyIn> gins;
 	std::vector<Point> poops1, poops2;
-	std::vector<int> perm1, perm2;
-	std::vector<int> perm1u, perm2u;
 
 	// trash
 	std::vector<Point> dst;
@@ -607,11 +605,39 @@ struct Game {
 		}
 	}
 
+	void fillGins() {
+		for (int i : walkers) {
+			for (auto& m : gins[i].moves) {
+				if (m.type == MoveType::WALK) {
+					(cells[m.data.pos].type == CellType::POOP ? poops2 : poops1).push_back(m.data.pos);
+				}
+			}
+			gins[i].moves.clear();
+		}
+		for (int i : walkers) {
+			if (poops2.size() == 0)
+				break;
+			Point p { 0, 0 };
+			if (poops1.size()) {
+				int idx = RND() % poops1.size();
+				p = poops1[idx];
+				poops1[idx] = poops1.back();
+				poops1.pop_back();
+			} else {
+				int idx = RND() % poops2.size();
+				p = poops2[idx];
+				poops2[idx] = poops2.back();
+				poops2.pop_back();
+			}
+			Move m;
+			m.walk(p);
+			gins[i].moves.push_back(m);
+		}
+	}
+
 	void walkTogether() {
 		poops1.clear();
 		poops2.clear();
-		perm1.clear();
-		perm2.clear();
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point p { x, y };
@@ -622,44 +648,6 @@ struct Game {
 					poops2.push_back(p);
 			}
 		}
-		for (int i = 0; i < (int) poops1.size(); i++)
-			perm1.push_back(i);
-		for (int i = 0; i < (int) poops2.size(); i++)
-			perm2.push_back(i);
-		auto fill = [&]() {
-			for (int i : walkers) {
-				gins[i].moves.clear();
-			}
-			for (int i : walkers) {
-				if (perm2.size() == 0)
-					break;
-				Point p { 0, 0 };
-				if (perm1.size()) {
-					int idx = RND() % perm1.size();
-					int idxx = perm1[idx];
-					p = poops1[idxx];
-					perm1u.push_back(idxx);
-					perm1[idx] = perm1.back();
-					perm1.pop_back();
-				} else {
-					int idx = RND() % perm2.size();
-					int idxx = perm2[idx];
-					p = poops2[idxx];
-					perm2u.push_back(idxx);
-					perm2[idx] = perm2.back();
-					perm2.pop_back();
-				}
-				Move m;
-				m.walk(p);
-				gins[i].moves.push_back(m);
-			}
-			for (auto j : perm1u)
-				perm1.push_back(j);
-			for (auto j : perm2u)
-				perm2.push_back(j);
-			perm1u.clear();
-			perm2u.clear();
-		};
 		gins.clear();
 		for (auto& g : guys)
 			gins.push_back({ g, { moves[g.id] } });
@@ -671,7 +659,7 @@ struct Game {
 			// timer.spam("Cycle...");
 			for (int i = 0; i < lim; i++) {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
-				fill();
+				fillGins();
 				double cur = sim.run(cells, gins, 5);
 				// std::cerr << "+: " << cur << std::endl;
 				if (cur > best) {
