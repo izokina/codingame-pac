@@ -44,19 +44,6 @@ private:
 	Clock::time_point start = Clock::now();
 };
 
-class Alarm {
-public:
-	Alarm(TimeNano::rep ttl, Timer& timer) : ttl(ttl), timer(timer) { }
-
-	bool ended() const {
-		return timer.get().count() > ttl;
-	}
-
-private:
-	const TimeNano::rep ttl;
-	Timer& timer;
-};
-
 class Cycler {
 public:
 	static const int PHASES = 10;
@@ -72,11 +59,19 @@ public:
 		return cycles;
 	}
 
+	bool ended() const {
+		return timer.get().count() >= ttl;
+	}
+
+	double norm() {
+		return timer.get().count() * 1.0 / ttl;
+	}
+
 private:
 	int calc() {
 		if (cycles == 0)
 			return 1;
-		if (timer.get().count() >= ttl)
+		if (ended())
 			return 0;
 		auto phases = (timer.get().count() * PHASES) / ttl;
 		if (phases == 0)
@@ -357,11 +352,6 @@ struct Sim {
 		bool stop;
 	};
 
-	struct GuyIn {
-		Guy guy;
-		std::vector<Move> moves;
-	};
-
 	Board<SimCell> sb;
 	Board<Board<Point>> dir;
 	std::array<SimGuy, 5> sg;
@@ -398,11 +388,11 @@ struct Sim {
 		}
 	}
 
-	double run(const Board<Cell>& board, const std::vector<GuyIn>& guys, int steps) {
+	double run(const Board<Cell>& board, const std::vector<Guy>& guys, const std::array<std::vector<Move>, 5>& moves, int steps) {
 		for (auto& g : guys) {
-			auto& g2 = sg[g.guy.id];
-			sb[g.guy.pos].visited = true;
-			g2.done.push_back(g2.pos = g.guy.pos);
+			auto& g2 = sg[g.id];
+			sb[g.pos].visited = true;
+			g2.done.push_back(g2.pos = g.pos);
 			g2.idx = 0;
 		}
 		double res = 0;
@@ -410,18 +400,19 @@ struct Sim {
 		for (int i = 0; i < steps; i++) {
 			for (int j = 0; j < 2; j++) {
 				for (auto& g : guys) {
-					auto& g2 = sg[g.guy.id];
+					auto& g2 = sg[g.id];
+					auto& mm = moves[g.id];
 					if (j == 0) {
-						while (g2.idx < (int) g.moves.size()) {
-							auto& m = g.moves[g2.idx];
+						while (g2.idx < (int) mm.size()) {
+							auto& m = mm[g2.idx];
 							if (m.type != MoveType::WALK || m.data.pos != g2.pos)
 								break;
 							g2.idx++;
 						}
 					}
-					if (g2.idx < (int) g.moves.size()) {
-						auto& m = g.moves[g2.idx];
-						if (m.type == MoveType::WALK && (j == 0 || g.guy.speed > i)) {
+					if (g2.idx < (int) mm.size()) {
+						auto& m = mm[g2.idx];
+						if (m.type == MoveType::WALK && (j == 0 || g.speed > i)) {
 							g2.stop = false;
 							sb[g2.target = dir[g2.pos][m.data.pos]].guys++;
 							continue;
@@ -434,7 +425,7 @@ struct Sim {
 				while (go) {
 					go = false;
 					for (auto& g : guys) {
-						auto& g2 = sg[g.guy.id];
+						auto& g2 = sg[g.id];
 						if (!g2.stop && sb[g2.target].guys > 1) {
 							g2.stop = true;
 							sb[g2.pos].guys++;
@@ -443,7 +434,7 @@ struct Sim {
 					}
 				}
 				for (auto& g : guys) {
-					auto& g2 = sg[g.guy.id];
+					auto& g2 = sg[g.id];
 					sb[g2.pos].guys = 0;
 					sb[g2.target].guys = 0;
 					if (!g2.stop) {
@@ -460,10 +451,10 @@ struct Sim {
 					}
 				}
 			}
-			k *= 0.99;
+			k *= 0.9;
 		}
 		for (auto& g : guys) {
-			auto& g2 = sg[g.guy.id];
+			auto& g2 = sg[g.id];
 			for (auto p : g2.done) {
 				sb[p].visited = false;
 			}
@@ -476,25 +467,26 @@ struct Sim {
 struct Game {
 	struct Gins {
 		float score = 0;
-		std::vector<Sim::GuyIn> guys;
-		std::vector<Point> poops1, poops2;
+		std::array<std::vector<Move>, 5> moves;
 	};
 
 	// const
 	int guyCnt;
 
 	// global
+	int step = 0;
+	Timer timer;
 	Board<Cell> cells;
 	Sim sim;
 	std::vector<Guy> guys, bitches;
 	std::vector<Poop> poops;
 	std::array<MoveFull, 5> moves;
+	Gins best;
 
 	// temp
-	int step = 0;
-	Timer timer;
-	std::vector<int> walkers, walkers2;
 	Gins gins, gins2;
+	std::vector<Point> poops1, poops2;
+	std::vector<int> walkers, walkers2;
 
 	// trash
 	std::vector<Point> dst;
@@ -575,18 +567,20 @@ struct Game {
 			auto& g = guys[i];
 			auto& m = moves[g.id];
 			simplePlayAttack(g, m);
-			if (m.empty())
-				walkers.push_back((int) i);
+			if (m.empty()) {
+				walkers.push_back(g.id);
+			}
 		}
 		walkTogether();
 		for (auto& g : guys) {
 			auto& m = moves[g.id];
-			if (m.empty())
+			if (m.empty()) {
 				simplePlayWalk(g, m);
+			}
 		}
 
 		std::stringstream ans;
-		for (int i = 0; i < 5; i++) {
+		for (int i = 0; i < guyCnt; i++) {
 			moves[i].dump(ans, i);
 		}
 		return ans.str();
@@ -630,53 +624,64 @@ struct Game {
 
 	void fillGins(Gins& g, const std::vector<int>& w) {
 		for (int i : w) {
-			for (auto& m : g.guys[i].moves) {
-				if (m.type == MoveType::WALK) {
-					(cells[m.data.pos].type == CellType::POOP ? g.poops2 : g.poops1).push_back(m.data.pos);
-				}
-			}
-			g.guys[i].moves.clear();
-		}
-		for (int i : w) {
-			if (g.poops1.size() == 0 && g.poops2.size() == 0)
-				break;
-			Point p { 0, 0 };
-			if (g.poops1.size() && (g.poops2.size() == 0 || ((RND() & 3) != 0))) {
-				int idx = RND() % g.poops1.size();
-				p = g.poops1[idx];
-				g.poops1[idx] = g.poops1.back();
-				g.poops1.pop_back();
-			} else {
-				int idx = RND() % g.poops2.size();
-				p = g.poops2[idx];
-				g.poops2[idx] = g.poops2.back();
-				g.poops2.pop_back();
-			}
 			Move m;
-			m.walk(p);
-			g.guys[i].moves.push_back(m);
+			if (poops1.size() && (poops2.size() == 0 || ((RND() & 15) != 0))) {
+				int idx = RND() % poops1.size();
+				m.walk(poops1[idx]);
+			} else {
+				int idx = RND() % poops2.size();
+				m.walk(poops2[idx]);
+			}
+			auto& mm = g.moves[i];
+			mm.clear();
+			mm.push_back(m);
 		}
-		g.score = sim.run(cells, g.guys, 5);
+		eval(g);
+	}
+
+	void eval(Gins& g) {
+		g.score = sim.run(cells, guys, g.moves, 8);
+		if (g.score > best.score) {
+			fprintf(stderr, "New best: %lf -> %lf\n", best.score, g.score);
+			best = g;
+		}
+	}
+
+	bool annealingStep(double temp, double score1, double score2) {
+		double delta = score2 - score1;
+		if (delta >= 0)
+			return true;
+		if (temp <= 0)
+			return false;
+		return (RND() * 1.0 / RND.max()) < (exp(delta / temp));
 	}
 
 	void walkTogether() {
-		gins.poops1.clear();
-		gins.poops2.clear();
+		poops1.clear();
+		poops2.clear();
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point p { x, y };
 				auto t = cells[p].type;
 				if (t == CellType::BIG_POOP)
-					gins.poops1.push_back(p);
+					poops1.push_back(p);
 				if (t == CellType::POOP)
-					gins.poops2.push_back(p);
+					poops2.push_back(p);
 			}
 		}
-		gins.guys.clear();
-		for (auto& g : guys)
-			gins.guys.push_back({ g, { moves[g.id] } });
-		std::shuffle(walkers.begin(), walkers.end(), RND);
-		fillGins(gins, walkers);
+		walkers2.clear();
+		for (int i = 0; i < guyCnt; i++)
+			gins.moves[i].clear();
+		for (int i : walkers) {
+			auto& b = best.moves[i];
+			if (b.size() == 0) {
+				walkers2.push_back(i);
+			} else {
+				gins.moves[i] = b;
+			}
+		}
+		best.score = -1;
+		fillGins(gins, walkers2);
 		Cycler cycler { 45'000'000, timer };
 		int lim;
 		timer.spam("Start sim");
@@ -685,28 +690,25 @@ struct Game {
 			for (int i = 0; i < lim; i++) {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
 				walkers2.clear();
-				size_t lim = std::min<size_t>(walkers.size(), 2);
-				for (size_t i = 0; i < lim; i++)
+				double temp = 1.0 - cycler.norm();
+				size_t l = std::min(walkers.size(), std::max<size_t>((int) (walkers.size() * temp), 1));
+				for (size_t i = 0; i < l; i++)
 					walkers2.push_back(walkers[i]);
 				gins2 = gins;
 				fillGins(gins2, walkers2);
 				// std::cerr << "+: " << cur << std::endl;
-				if (gins2.score > gins.score) {
-					for (int j : walkers) {
-						auto& g = gins2.guys[j];
-						auto& m = g.moves;
-						if (m.size())
-							moves[g.guy.id] = { m[0], "SMART" };
-					}
-				}
-				if (gins2.score > gins.score) {
-					fprintf(stderr, "New best: %lf -> %lf\n", gins.score, gins2.score);
+				if (annealingStep(0.01 * temp, gins.score, gins2.score)) {
 					gins = gins2;
 				}
 			}
 		}
 		// timer.spam("Cycle...");
 		std::cerr << "Total sim: " << cycler.total() << std::endl;
+		for (int i : walkers) {
+			auto& m = best.moves[i];
+			if (m.size())
+				moves[i] = { m[0], "SMART" };
+		}
 	}
 
 	void simplePlayWalk(const Guy& g, MoveFull& move) {
