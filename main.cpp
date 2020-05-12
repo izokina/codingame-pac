@@ -703,7 +703,7 @@ struct Game {
 				gins2 = gins;
 				fillGins(gins2, walkers2);
 				// std::cerr << "+: " << cur << std::endl;
-				if (annealingStep(0.01 * temp, gins.score, gins2.score)) {
+				if (annealingStep(temp, gins.score, gins2.score)) {
 					gins = gins2;
 				}
 			}
