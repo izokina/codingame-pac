@@ -524,7 +524,7 @@ struct Game {
 		for (auto& g : guys) {
 			for (auto& d : Point::DIRS) {
 				Point cur = g.pos;
-				for (int i = 0; i < 20; i++) {
+				for (int i = 0; i < 40; i++) {
 					Cell& c = cells[cur];
 					if (c.type == CellType::WALL)
 						break;
@@ -558,7 +558,10 @@ struct Game {
 		}
 
 		for (auto& b : bitches) {
-			cells[b.pos].pid = b.id + guyCnt;
+			auto& c = cells[b.pos];
+			c.pid = b.id + guyCnt;
+			if (c.seen != step)
+				fprintf(stderr, "Ooops! See bitch on %dx%x\n", b.pos.x, b.pos.y);
 		}
 	}
 
@@ -759,6 +762,10 @@ int main()
             int speedTurnsLeft; // unused in wood leagues
             int abilityCooldown; // unused in wood leagues
 			std::cin >> pacId >> mine >> x >> y >> typeId >> speedTurnsLeft >> abilityCooldown; std::cin.ignore();
+			fprintf(stderr, "Pac[%s]: %d\n", typeId.c_str(), pacId);
+			if (typeId == "DEAD") {
+				continue;
+			}
 			(mine ? game.guys : game.bitches)
 				.push_back({ pacId, { x, y }, speedTurnsLeft, abilityCooldown, GuyType::get(typeId) });
         }
