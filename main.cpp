@@ -460,7 +460,7 @@ struct Sim {
 					}
 				}
 			}
-			k *= 0.99;
+			k *= 0.9;
 		}
 		for (auto& g : guys) {
 			auto& g2 = sg[g.guy.id];
@@ -475,6 +475,7 @@ struct Sim {
 
 struct Game {
 	struct Gins {
+		float score = 0;
 		std::vector<Sim::GuyIn> guys;
 		std::vector<Point> poops1, poops2;
 	};
@@ -655,6 +656,7 @@ struct Game {
 			m.walk(p);
 			g.guys[i].moves.push_back(m);
 		}
+		g.score = sim.run(cells, g.guys, 10);
 	}
 
 	void walkTogether() {
@@ -675,7 +677,6 @@ struct Game {
 			gins.guys.push_back({ g, { moves[g.id] } });
 		std::shuffle(walkers.begin(), walkers.end(), RND);
 		fillGins(gins, walkers);
-		double best = 0;
 		Cycler cycler { 45'000'000, timer };
 		int lim;
 		timer.spam("Start sim");
@@ -689,9 +690,8 @@ struct Game {
 					walkers2.push_back(walkers[i]);
 				gins2 = gins;
 				fillGins(gins2, walkers2);
-				double cur = sim.run(cells, gins2.guys, 5);
 				// std::cerr << "+: " << cur << std::endl;
-				if (cur > best) {
+				if (gins2.score > gins.score) {
 					for (int j : walkers) {
 						auto& g = gins2.guys[j];
 						auto& m = g.moves;
@@ -699,9 +699,8 @@ struct Game {
 							moves[g.guy.id] = { m[0], "SMART" };
 					}
 				}
-				if (cur > best) {
-					fprintf(stderr, "New best: %lf -> %lf\n", best, cur);
-					best = cur;
+				if (gins2.score > gins.score) {
+					fprintf(stderr, "New best: %lf -> %lf\n", gins.score, gins2.score);
 					gins = gins2;
 				}
 			}
