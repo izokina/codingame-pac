@@ -460,7 +460,7 @@ struct Sim {
 					}
 				}
 			}
-			k *= 0.9;
+			k *= 0.99;
 		}
 		for (auto& g : guys) {
 			auto& g2 = sg[g.guy.id];
@@ -656,7 +656,7 @@ struct Game {
 			m.walk(p);
 			g.guys[i].moves.push_back(m);
 		}
-		g.score = sim.run(cells, g.guys, 10);
+		g.score = sim.run(cells, g.guys, 5);
 	}
 
 	void walkTogether() {
