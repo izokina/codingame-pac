@@ -580,8 +580,14 @@ struct Game {
 		}
 
 		std::stringstream ans;
-		for (int i = 0; i < guyCnt; i++) {
-			moves[i].dump(ans, i);
+		for (auto& g : guys) {
+			auto& m = moves[g.id];
+			if (m.type == MoveType::WALK) {
+				Point p1 = sim.dir[g.pos][m.data.pos];
+				Point p2 = sim.dir[p1][m.data.pos];
+				m.data.pos = p2;
+			}
+			m.dump(ans, g.id);
 		}
 		return ans.str();
 	}
