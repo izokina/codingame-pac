@@ -630,17 +630,19 @@ struct Game {
 
 	void fillGins(Gins& g, const std::vector<int>& w) {
 		for (int i : w) {
-			Move m;
-			if (poops1.size() && (poops2.size() == 0 || ((RND() & 15) != 0))) {
-				int idx = RND() % poops1.size();
-				m.walk(poops1[idx]);
-			} else {
-				int idx = RND() % poops2.size();
-				m.walk(poops2[idx]);
-			}
 			auto& mm = g.moves[i];
 			mm.clear();
-			mm.push_back(m);
+			for (int j = 0; j < 2; j++) {
+				Move m;
+				if (poops1.size() && (poops2.size() == 0 || ((RND() & 15) != 0))) {
+					int idx = RND() % poops1.size();
+					m.walk(poops1[idx]);
+				} else {
+					int idx = RND() % poops2.size();
+					m.walk(poops2[idx]);
+				}
+				mm.push_back(m);
+			}
 		}
 		eval(g);
 	}
@@ -710,10 +712,14 @@ struct Game {
 		}
 		// timer.spam("Cycle...");
 		std::cerr << "Total sim: " << cycler.total() << std::endl;
-		for (int i : walkers) {
-			auto& m = best.moves[i];
-			if (m.size())
-				moves[i] = { m[0], "SMART" };
+		for (auto& g : guys) {
+			auto& mm = best.moves[g.id];
+			for (auto& m : mm) {
+				if (m.data.pos != g.pos) {
+					moves[g.id] = { m, "SMART" };
+					break;
+				}
+			}
 		}
 	}
 
