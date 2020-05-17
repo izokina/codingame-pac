@@ -636,9 +636,9 @@ struct Game {
 		for (int i : w) {
 			auto& mm = g.moves[i];
 			mm.clear();
-			for (int j = 0; j < 1; j++) {
+			for (int j = 0; j < 3; j++) {
 				Move m;
-				if (poops1.size() && (poops2.size() == 0 || ((RND() & 15) != 0))) {
+				if (poops1.size() && (poops2.size() == 0 || ((RND() & 7) != 0))) {
 					int idx = RND() % poops1.size();
 					m.walk(poops1[idx]);
 				} else {
@@ -703,7 +703,7 @@ struct Game {
 				std::shuffle(walkers.begin(), walkers.end(), RND);
 				walkers2.clear();
 				double temp = 1.0 - cycler.norm();
-				size_t l = std::min(walkers.size(), std::max<size_t>((int) (walkers.size() * temp), 1));
+				size_t l = std::min(walkers.size(), std::max<size_t>((int) (walkers.size() / 2 * temp), 1));
 				for (size_t j = 0; j < l; j++)
 					walkers2.push_back(walkers[j]);
 				gins2 = gins;
@@ -779,7 +779,7 @@ int main()
             int speedTurnsLeft; // unused in wood leagues
             int abilityCooldown; // unused in wood leagues
 			std::cin >> pacId >> mine >> x >> y >> typeId >> speedTurnsLeft >> abilityCooldown; std::cin.ignore();
-			fprintf(stderr, "Pac[%s]: %d\n", typeId.c_str(), pacId);
+			// fprintf(stderr, "Pac[%s]: %d\n", typeId.c_str(), pacId);
 			if (typeId == "DEAD") {
 				continue;
 			}
