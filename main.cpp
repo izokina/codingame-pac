@@ -636,7 +636,7 @@ struct Game {
 		for (int i : w) {
 			auto& mm = g.moves[i];
 			mm.clear();
-			for (int j = 0; j < 2; j++) {
+			for (int j = 0; j < 5; j++) {
 				Move m;
 				if (poops1.size() && (poops2.size() == 0 || ((RND() & 15) != 0))) {
 					int idx = RND() % poops1.size();
@@ -652,7 +652,7 @@ struct Game {
 	}
 
 	void eval(Gins& g) {
-		g.score = sim.run(cells, guys, g.moves, 8);
+		g.score = sim.run(cells, guys, g.moves, 15);
 		if (g.score > best.score) {
 			fprintf(stderr, "New best: %lf -> %lf\n", best.score, g.score);
 			best = g;
