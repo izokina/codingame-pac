@@ -183,27 +183,28 @@ struct GuyType {
 	}
 
 	const std::string& str() const {
-		return TYPES[lvl];
+		return getTypes()[lvl];
 	}
 
 private:
 	static constexpr uint8_t UP[3] { 1, 2, 0 };
 	static constexpr uint8_t DOWN[3] { 2, 0, 1 };
 
-	static std::unordered_map<std::string, uint8_t> genTypesMap() {
+	static const std::unordered_map<std::string, uint8_t> genTypesMap() {
 		std::unordered_map<std::string, uint8_t> res;
-		for (size_t i = 0; i < std::size(TYPES); i++)
-			res[TYPES[i]] = i;
+		for (size_t i = 0; i < std::size(getTypes()); i++)
+			res[getTypes()[i]] = i;
 		return res;
 	}
 
-	static std::string TYPES[3];
-};
-
-std::string GuyType::TYPES[3] {
-	"PAPER",
-	"SCISSORS",
-	"ROCK"
+	static const std::array<std::string, 3>& getTypes() {
+		static const std::array<std::string, 3> TYPES {
+			"PAPER",
+			"SCISSORS",
+			"ROCK"
+		};
+		return TYPES;
+	}
 };
 
 struct Guy {
@@ -361,12 +362,16 @@ struct Sim {
 		for (int y = 0; y < Point::SIZE.y; y++) {
 			for (int x = 0; x < Point::SIZE.x; x++) {
 				Point pos { x, y };
-				auto& dirr = dir[pos] = { pos };
+				auto& dirr = dir[pos];
+				for (auto& i1 : dirr.board) {
+					for (auto& i2 : i1) {
+						i2 = pos;
+					}
+				}
 				if (board[pos].type == CellType::WALL)
 					continue;
 				q.push_back(pos);
 				sb[pos].visited = true;
-				dirr[pos] = pos;
 				for (size_t i = 0; i < q.size(); i++) {
 					auto qq = q[i];
 					for (auto& d : Point::DIRS) {
@@ -412,7 +417,7 @@ struct Sim {
 					}
 					if (g2.idx < (int) mm.size()) {
 						auto& m = mm[g2.idx];
-						if (m.type == MoveType::WALK && (j == 0 || g.speed > i)) {
+						if (m.type == MoveType::WALK && m.data.pos != g2.pos && (j == 0 || g.speed > i)) {
 							g2.stop = false;
 							sb[g2.target = dir[g2.pos][m.data.pos]].guys++;
 							continue;
@@ -563,8 +568,7 @@ struct Game {
 			moves[i].none();
 
 		walkers.clear();
-		for (size_t i = 0; i < guys.size(); i++) {
-			auto& g = guys[i];
+		for (auto& g : guys) {
 			auto& m = moves[g.id];
 			simplePlayAttack(g, m);
 			if (m.empty()) {
@@ -700,8 +704,8 @@ struct Game {
 				walkers2.clear();
 				double temp = 1.0 - cycler.norm();
 				size_t l = std::min(walkers.size(), std::max<size_t>((int) (walkers.size() * temp), 1));
-				for (size_t i = 0; i < l; i++)
-					walkers2.push_back(walkers[i]);
+				for (size_t j = 0; j < l; j++)
+					walkers2.push_back(walkers[j]);
 				gins2 = gins;
 				fillGins(gins2, walkers2);
 				// std::cerr << "+: " << cur << std::endl;
@@ -712,30 +716,30 @@ struct Game {
 		}
 		// timer.spam("Cycle...");
 		std::cerr << "Total sim: " << cycler.total() << std::endl;
-		for (auto& g : guys) {
-			auto& mm = best.moves[g.id];
-			for (auto& m : mm) {
-				if (m.data.pos != g.pos) {
-					moves[g.id] = { m, "SMART" };
-					break;
+		if (best.score > 1e-9) {
+			for (auto& g : guys) {
+				auto& mm = best.moves[g.id];
+				for (auto& m : mm) {
+					if (m.type != MoveType::WALK || m.data.pos != g.pos) {
+						moves[g.id] = { m, "SMART" };
+						break;
+					}
 				}
 			}
 		}
 	}
 
 	void simplePlayWalk(const Guy& g, MoveFull& move) {
-		for (auto& p : poops) {
-			if (p.size == 10) {
-				move.walk(p.pos, "IDIOT 1");
-				p = poops.back();
-				poops.pop_back();
-				return;
-			}
+		for (auto p : poops1) {
+			move.walk(p, "IDIOT 1");
+			p = poops1.back();
+			poops1.pop_back();
+			return;
 		}
-		for (auto& p : poops) {
-			move.walk(p.pos, "IDIOT 2");
-			p = poops.back();
-			poops.pop_back();
+		for (auto p : poops2) {
+			move.walk(p, "IDIOT 2");
+			p = poops2.back();
+			poops2.pop_back();
 			return;
 		}
 		if (g.pos.dst(dst[g.id]) <= 2) {
